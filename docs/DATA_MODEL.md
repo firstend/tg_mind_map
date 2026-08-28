@@ -14,9 +14,12 @@
 | `summary` | str, опционально | Краткое обобщение для отображения в карте |
 | `source_message_id` | int, опционально | message_id в Telegram (для трассировки) |
 | `created_at` | datetime | Время появления |
-| `updated_at` | datetime | Последнее изменение (если мысль дообогащалась) |
+| `updated_at` | datetime | Последнее изменение |
+| `source_type` | enum | user \| ai — кто предложил |
+| `node_type` | enum | thought \| request \| suggestion |
+| `status` | enum | idea \| in_progress \| accepted \| rejected \| deferred \| done |
 
-На старте можно обойтись без `summary` и хранить только `content`; `summary` полезен, когда узлов много и карту показываем компактно.
+`content` — полный текст; `summary` — тема для карты (извлечённая ИИ).
 
 ### 1.2 Ребро (Edge)
 

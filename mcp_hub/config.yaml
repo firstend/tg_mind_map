@@ -1,0 +1,26 @@
+servers:
+  filesystem:
+    transport: stdio
+    command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "${MCP_FILESYSTEM_ROOT:-/tmp}"]
+
+  brave_search:
+    transport: stdio
+    command: ["npx", "-y", "@brave/brave-search-mcp-server"]
+    env:
+      BRAVE_API_KEY: "${BRAVE_API_KEY}"
+
+  fetch:
+    transport: stdio
+    command: ["python", "-m", "mcp_server_fetch"]
+
+  time:
+    transport: stdio
+    command: ["python", "-m", "mcp_server_time"]
+
+  mindmap:
+    transport: stdio
+    command: ["python", "-m", "mcp_server_mindmap"]
+    env:
+      DATABASE_URL: "${DATABASE_URL}"
+      REDIS_URL: "${REDIS_URL:-redis://localhost:6379/0}"
+      USE_LLM_SERVICE: "${USE_LLM_SERVICE:-true}"

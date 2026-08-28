@@ -21,15 +21,23 @@ BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
 def send_to_telegram(msg: OutgoingMessage) -> None:
-    payload = {
-        "chat_id": msg.chat_id,
-        "text": msg.text,
-    }
-    if msg.reply_to_message_id is not None:
-        payload["reply_to_message_id"] = msg.reply_to_message_id
     with httpx.Client(timeout=30.0) as client:
-        r = client.post(f"{BASE_URL}/sendMessage", json=payload)
-        r.raise_for_status()
+        if msg.callback_query_id:
+            client.post(
+                f"{BASE_URL}/answerCallbackQuery",
+                json={"callback_query_id": msg.callback_query_id, "text": msg.text or "OK"},
+            ).raise_for_status()
+        else:
+            payload = {
+                "chat_id": msg.chat_id,
+                "text": msg.text,
+            }
+            if msg.reply_to_message_id is not None:
+                payload["reply_to_message_id"] = msg.reply_to_message_id
+            if msg.reply_markup is not None:
+                payload["reply_markup"] = msg.reply_markup
+            r = client.post(f"{BASE_URL}/sendMessage", json=payload)
+            r.raise_for_status()
 
 
 def run_sender() -> None:

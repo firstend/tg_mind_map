@@ -1,40 +1,36 @@
 """
-Gateway: приём webhook от Telegram, постановка в очередь incoming.
+Gateway: приём webhook или long polling от Telegram, постановка в очередь incoming.
 """
 
 import os
+import threading
 
 from dotenv import load_dotenv
 load_dotenv()
-from typing import Any, Optional
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 
-from shared.models import IncomingMessage
+from gateway.updates import extract_incoming
 from shared.queues import push_incoming
 
-app = FastAPI(title="Mind Map Gateway")
+GATEWAY_MODE = os.environ.get("GATEWAY_MODE", "poll").lower()
 
 
-def extract_incoming(request_body: dict[str, Any]) -> Optional[IncomingMessage]:
-    """Из Update Telegram извлекаем chat_id, user_id, text, message_id, voice."""
-    msg = request_body.get("message") or request_body.get("edited_message")
-    if not msg:
-        return None
-    chat = msg.get("chat")
-    from_user = msg.get("from")
-    if not chat or not from_user:
-        return None
-    text = (msg.get("text") or "").strip()
-    voice = msg.get("voice")
-    voice_file_id = voice.get("file_id") if voice else None
-    return IncomingMessage(
-        chat_id=chat["id"],
-        user_id=from_user["id"],
-        text=text,
-        message_id=msg.get("message_id"),
-        voice_file_id=voice_file_id,
-    )
+def _run_poller() -> None:
+    from gateway.poller import run_poller
+    run_poller()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if GATEWAY_MODE == "poll":
+        t = threading.Thread(target=_run_poller, daemon=True)
+        t.start()
+    yield
+
+
+app = FastAPI(title="Mind Map Gateway", lifespan=lifespan)
 
 
 @app.post("/webhook")
@@ -50,7 +46,18 @@ async def webhook(request: Request) -> Response:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok"}
+    """Проверка: процесс жив, Redis доступен."""
+    from shared.queues import get_redis
+
+    redis_ok = False
+    try:
+        r = get_redis()
+        r.ping()
+        redis_ok = True
+    except Exception:
+        pass
+    status = "ok" if redis_ok else "degraded"
+    return {"status": status, "redis": "ok" if redis_ok else "unavailable"}
 
 
 if __name__ == "__main__":

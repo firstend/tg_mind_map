@@ -1,21 +1,82 @@
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
     volumes:
       - redis_data:/data
 
   postgres:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mindmap"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     environment:
       POSTGRES_USER: mindmap
       POSTGRES_PASSWORD: mindmap
       POSTGRES_DB: mindmap
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  gateway:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      GATEWAY_MODE: ${GATEWAY_MODE:-poll}  # poll — опрос, без HTTPS; webhook — setWebhook + HTTPS
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    command: ["uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  llm_service:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    env_file:
+      - .env
+    command: ["python", "-m", "llm_service.runner"]
+
+  worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      llm_service:
+        condition: service_started
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://mindmap:mindmap@postgres:5432/mindmap
+      USE_LLM_SERVICE: "true"
+      USE_PLANNER_AUTO: "true"
+      USE_MULTISTEP_PLANNER: ${USE_MULTISTEP_PLANNER:-true}
+      USE_DEBUG: ${USE_DEBUG:-true}
+      PYTHONUNBUFFERED: "1"
+    env_file:
+      - .env
+    command: ["python", "-m", "worker.processor"]
+
+  sender:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    env_file:
+      - .env
+    command: ["python", "-m", "sender.run"]
 
 volumes:
   redis_data:

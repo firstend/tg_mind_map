@@ -13,6 +13,9 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://mindmap:mindmap@loca
 @contextmanager
 def get_conn():
     conn = psycopg2.connect(DATABASE_URL)
+    with conn.cursor() as cur:
+        cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    conn.commit()
     register_vector(conn)
     try:
         yield conn

@@ -3,6 +3,8 @@
 import uuid
 from typing import Optional
 
+import numpy as np
+
 from shared.db import get_conn
 
 # text-embedding-3-small → 1536 dimensions
@@ -12,7 +14,6 @@ EMBEDDING_DIM = 1536
 def init_schema() -> None:
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
             cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS chunks (
                     id TEXT PRIMARY KEY,
@@ -39,12 +40,13 @@ def add_chunk(
     chunk_id: Optional[str] = None,
 ) -> str:
     cid = chunk_id or uuid.uuid4().hex
+    vec = np.array(embedding, dtype=np.float32)
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO chunks (id, user_id, text, embedding, source_node_id)
                    VALUES (%s, %s, %s, %s, %s)""",
-                (cid, user_id, text, embedding, source_node_id),
+                (cid, user_id, text, vec, source_node_id),
             )
     return cid
 
@@ -55,6 +57,7 @@ def search(
     top_k: int = 5,
 ) -> list[dict]:
     """Возвращает список {text, source_node_id?} для пользователя user_id."""
+    vec = np.array(query_embedding, dtype=np.float32)
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -62,7 +65,18 @@ def search(
                    WHERE user_id = %s
                    ORDER BY embedding <=> %s
                    LIMIT %s""",
-                (user_id, query_embedding, top_k),
+                (user_id, vec, top_k),
             )
             rows = cur.fetchall()
     return [{"text": r[0] or "", "source_node_id": r[1]} for r in rows]
+
+
+def delete_chunks_by_source_node(user_id: int, source_node_id: str) -> int:
+    """Удаляет чанки, привязанные к узлу. Возвращает количество удалённых."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM chunks WHERE user_id = %s AND source_node_id = %s",
+                (user_id, source_node_id),
+            )
+            return cur.rowcount
